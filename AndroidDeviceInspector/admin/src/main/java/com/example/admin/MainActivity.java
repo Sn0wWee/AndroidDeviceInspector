@@ -1,54 +1,43 @@
+
 package com.example.admin;
 
 import android.app.Activity;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.MultiFormatWriter;
+import com.google.zxing.common.BitMatrix;
+
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.security.SecureRandom;
+import java.util.Enumeration;
+
 public class MainActivity extends Activity {
 
-    private LinearLayout root;
+    private TextView status;
+    private TextView address;
+    private ImageView qrImage;
+    private ServerSocket serverSocket;
+    private String token;
 
-    private TextView createText(String value, int size, int color) {
+    private void addText(LinearLayout layout, String value, int size) {
         TextView text = new TextView(this);
         text.setText(value);
         text.setTextSize(size);
-        text.setTextColor(color);
-        text.setPadding(0, 10, 0, 10);
-        return text;
-    }
-
-    private void addSection(String heading, String details) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(24, 18, 24, 18);
-        card.setBackgroundColor(Color.WHITE);
-
-        TextView title = createText(heading, 19, Color.BLACK);
-        TextView body = createText(details, 15, Color.DKGRAY);
-
-        card.addView(title);
-        card.addView(body);
-
-        LinearLayout.LayoutParams params =
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT);
-        params.setMargins(0, 10, 0, 10);
-
-        root.addView(card, params);
-    }
-
-    private void addButton(String label) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setEnabled(false);
-        root.addView(button);
+        text.setTextColor(Color.BLACK);
+        text.setPadding(8, 16, 8, 16);
+        layout.addView(text);
     }
 
     @Override
@@ -56,52 +45,219 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.rgb(242, 244, 248));
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(24, 24, 24, 24);
+        layout.setBackgroundColor(Color.WHITE);
+        scroll.addView(layout);
 
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(20, 24, 20, 24);
-
-        scroll.addView(root);
-        setContentView(scroll);
-
-        TextView heading = createText(
-                "Device Inspector Admin", 26, Color.BLACK);
+        TextView heading = new TextView(this);
+        heading.setText("Device Inspector Admin");
+        heading.setTextSize(25);
+        heading.setTextColor(Color.BLACK);
         heading.setGravity(Gravity.CENTER);
-        root.addView(heading);
+        layout.addView(heading);
 
-        TextView subtitle = createText(
-                "Manage your paired device", 15, Color.DKGRAY);
-        subtitle.setGravity(Gravity.CENTER);
-        root.addView(subtitle);
+        status = new TextView(this);
+        status.setText("Server not started");
+        status.setTextSize(17);
+        status.setTextColor(Color.DKGRAY);
+        layout.addView(status);
 
-        addSection(
-                "Connection status",
-                "No device paired yet.");
+        address = new TextView(this);
+        address.setText("Start the server to generate pairing details.");
+        address.setTextSize(15);
+        address.setTextColor(Color.BLACK);
+        layout.addView(address);
 
-        addSection(
-                "Cloud service",
-                "Not configured. Device communication and photo transfer are not active.");
+        qrImage = new ImageView(this);
+        LinearLayout.LayoutParams qrParams =
+                new LinearLayout.LayoutParams(600, 600);
+        qrParams.gravity = Gravity.CENTER;
+        layout.addView(qrImage, qrParams);
 
-        addSection(
-                "Device information",
-                "Device name: Not connected\n" +
-                "Battery: Not available\n" +
-                "Android version: Not available\n" +
-                "Last sync: Never");
+        Button start = new Button(this);
+        start.setText("Start Wi-Fi Connection");
+        layout.addView(start);
 
-        addSection(
-                "Photo transfer",
-                "No photos received.\n" +
-                "Photo syncing will be available after secure pairing and cloud setup.");
+        Button stop = new Button(this);
+        stop.setText("Stop Connection");
+        layout.addView(stop);
 
-        addSection(
-                "Pair a device",
-                "QR pairing will be added in a later development step.");
+        addText(layout,
+                "Keep the Realme hotspot ON and connect the TECNO to it.",
+                15);
 
-        addButton("Generate pairing QR — coming soon");
-        addButton("Pause syncing — coming soon");
-        addButton("Resume syncing — coming soon");
-        addButton("Disconnect device — coming soon");
+        start.setOnClickListener(v -> startServer());
+        stop.setOnClickListener(v -> stopServer());
+
+        setContentView(scroll);
+    }
+
+    private String getLocalIp() {
+        try {
+            Enumeration<NetworkInterface> interfaces =
+                    NetworkInterface.getNetworkInterfaces();
+
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface network = interfaces.nextElement();
+                Enumeration<InetAddress> addresses =
+                        network.getInetAddresses();
+
+                while (addresses.hasMoreElements()) {
+                    InetAddress ip = addresses.nextElement();
+
+                    if (!ip.isLoopbackAddress()
+                            && ip.getHostAddress().indexOf(':') < 0) {
+                        String value = ip.getHostAddress();
+
+                        if (value.startsWith("192.168.")
+                                || value.startsWith("10.")) {
+                            return value;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        return null;
+    }
+
+    private String createToken() {
+        byte[] bytes = new byte[24];
+        new SecureRandom().nextBytes(bytes);
+
+        StringBuilder result = new StringBuilder();
+        for (byte b : bytes) {
+            result.append(String.format("%02x", b));
+        }
+        return result.toString();
+    }
+
+    private void showQr(String value) {
+        try {
+            BitMatrix matrix = new MultiFormatWriter().encode(
+                    value, BarcodeFormat.QR_CODE, 600, 600);
+
+            Bitmap bitmap = Bitmap.createBitmap(
+                    600, 600, Bitmap.Config.RGB_565);
+
+            for (int x = 0; x < 600; x++) {
+                for (int y = 0; y < 600; y++) {
+                    bitmap.setPixel(x, y,
+                            matrix.get(x, y) ? Color.BLACK : Color.WHITE);
+                }
+            }
+
+            qrImage.setImageBitmap(bitmap);
+        } catch (Exception e) {
+            status.setText("Could not create QR code: " + e.getMessage());
+        }
+    }
+
+    private void startServer() {
+        if (serverSocket != null && !serverSocket.isClosed()) {
+            status.setText("Server is already running.");
+            return;
+        }
+
+        String ip = getLocalIp();
+
+        if (ip == null) {
+            status.setText("Could not find hotspot IP. Check hotspot.");
+            return;
+        }
+
+        token = createToken();
+        String pairingData = "http://" + ip + ":8988/pair?token=" + token;
+
+        showQr(pairingData);
+        address.setText("Admin address: " + ip + ":8988\n"
+                + "Pairing QR is ready. Keep this screen open.");
+
+        status.setText("Starting local Wi-Fi server...");
+
+        new Thread(() -> {
+            try {
+                serverSocket = new ServerSocket(8988, 10,
+                        InetAddress.getByName("0.0.0.0"));
+
+                runOnUiThread(() ->
+                        status.setText("Waiting for Collector connection"));
+
+                while (!serverSocket.isClosed()) {
+                    Socket client = serverSocket.accept();
+
+                    new Thread(() -> handleClient(client)).start();
+                }
+            } catch (Exception e) {
+                runOnUiThread(() ->
+                        status.setText("Server error: " + e.getMessage()));
+            }
+        }).start();
+    }
+
+    private void handleClient(Socket client) {
+        try {
+            java.io.BufferedReader input =
+                    new java.io.BufferedReader(
+                            new java.io.InputStreamReader(
+                                    client.getInputStream()));
+
+            String request = input.readLine();
+
+            while (input.readLine() != null
+                    && !input.readLine().isEmpty()) {
+                // Read request headers.
+            }
+
+            boolean valid = request != null
+                    && request.contains("/pair?token=" + token);
+
+            String body = valid
+                    ? "PAIR_OK"
+                    : "PAIR_DENIED";
+
+            String response = "HTTP/1.1 200 OK\r\n"
+                    + "Content-Type: text/plain\r\n"
+                    + "Content-Length: " + body.length() + "\r\n"
+                    + "Connection: close\r\n\r\n"
+                    + body;
+
+            client.getOutputStream().write(
+                    response.getBytes("UTF-8"));
+            client.getOutputStream().flush();
+
+            if (valid) {
+                runOnUiThread(() ->
+                        status.setText("Collector reached Admin server"));
+            }
+        } catch (Exception ignored) {
+        } finally {
+            try {
+                client.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void stopServer() {
+        try {
+            if (serverSocket != null) {
+                serverSocket.close();
+            }
+            qrImage.setImageDrawable(null);
+            status.setText("Connection stopped");
+            address.setText("Server is offline.");
+        } catch (Exception e) {
+            status.setText("Could not stop server");
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        stopServer();
+        super.onDestroy();
     }
 }
