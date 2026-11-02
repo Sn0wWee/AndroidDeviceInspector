@@ -1,254 +1,215 @@
+
 package com.example.collector;
 
-import android.Manifest;
 import android.app.Activity;
-import android.os.Build;
+import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
-import android.content.pm.PackageManager;
-import android.database.Cursor;
-import android.provider.MediaStore;
 import android.view.Gravity;
-import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
+
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
 public class MainActivity extends Activity {
 
-    private static final int GALLERY_PERMISSION_REQUEST = 100;
-
-    private TextView permissionStatus;
-    private TextView photoCount;
-    private TextView syncStatus;
-    private CheckBox consentCheckBox;
-
-    private boolean paused = false;
-    private boolean connected = false;
+    private TextView status;
+    private Button scanButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        createInterface();
-        updatePermissionStatus();
-    }
-
-    private void createInterface() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(40, 40, 40, 40);
-        layout.setBackgroundColor(0xFFF5F5F5);
+        layout.setPadding(32, 40, 32, 32);
+        layout.setGravity(Gravity.CENTER_HORIZONTAL);
+        layout.setBackgroundColor(Color.WHITE);
 
         TextView heading = new TextView(this);
         heading.setText("Device Inspector Collector");
-        heading.setTextSize(25);
-        heading.setTextColor(0xFF1565C0);
+        heading.setTextSize(24);
+        heading.setTextColor(Color.BLACK);
         heading.setGravity(Gravity.CENTER);
-        heading.setPadding(0, 20, 0, 30);
         layout.addView(heading);
 
-        TextView explanation = new TextView(this);
-        explanation.setText(
-                "This app allows you to share selected device information " +
-                "and gallery photos with your paired Admin device."
+        TextView instructions = new TextView(this);
+        instructions.setText(
+                "\n1. Connect this phone to the Admin phone's hotspot."
+                + "\n\n2. Open the Admin app on the Realme."
+                + "\n\n3. Press Start Wi-Fi Connection."
+                + "\n\n4. Scan the Admin QR code below."
         );
-        explanation.setTextSize(16);
-        explanation.setTextColor(0xFF222222);
-        layout.addView(explanation);
+        instructions.setTextSize(16);
+        instructions.setTextColor(Color.DKGRAY);
+        layout.addView(instructions);
 
-        consentCheckBox = new CheckBox(this);
-        consentCheckBox.setText(
-                "I understand and agree to allow gallery access."
-        );
-        consentCheckBox.setTextColor(0xFF222222);
-        consentCheckBox.setPadding(0, 25, 0, 20);
-        layout.addView(consentCheckBox);
+        scanButton = new Button(this);
+        scanButton.setText("Scan Admin QR Code");
+        layout.addView(scanButton);
 
-        Button permissionButton = new Button(this);
-        permissionButton.setText("Allow Gallery Access");
-        layout.addView(permissionButton);
+        status = new TextView(this);
+        status.setText("Status: Not connected");
+        status.setTextSize(17);
+        status.setTextColor(Color.DKGRAY);
+        status.setPadding(0, 28, 0, 28);
+        layout.addView(status);
 
-        permissionStatus = createStatusText();
-        layout.addView(permissionStatus);
+        Button resetButton = new Button(this);
+        resetButton.setText("Reset Status");
+        layout.addView(resetButton);
 
-        photoCount = createStatusText();
-        layout.addView(photoCount);
+        scanButton.setOnClickListener(v -> {
+            IntentIntegrator integrator =
+                    new IntentIntegrator(this);
 
-        TextView pairingHeading = new TextView(this);
-        pairingHeading.setText("Device Pairing");
-        pairingHeading.setTextSize(20);
-        pairingHeading.setTextColor(0xFF1565C0);
-        pairingHeading.setPadding(0, 30, 0, 10);
-        layout.addView(pairingHeading);
-
-        TextView pairingStatus = createStatusText();
-        pairingStatus.setText("Not paired with an Admin device");
-        layout.addView(pairingStatus);
-
-        TextView syncHeading = new TextView(this);
-        syncHeading.setText("Photo Sharing");
-        syncHeading.setTextSize(20);
-        syncHeading.setTextColor(0xFF1565C0);
-        syncHeading.setPadding(0, 25, 0, 10);
-        layout.addView(syncHeading);
-
-        syncStatus = createStatusText();
-        syncStatus.setText("Cloud sync is not configured");
-        layout.addView(syncStatus);
-
-        Button pauseButton = new Button(this);
-        pauseButton.setText("Pause Sharing");
-        layout.addView(pauseButton);
-
-        Button disconnectButton = new Button(this);
-        disconnectButton.setText("Disconnect Device");
-        layout.addView(disconnectButton);
-
-        TextView notice = new TextView(this);
-        notice.setText(
-                "\nPrivacy notice:\n" +
-                "Gallery access requires your permission. " +
-                "This version does not upload or transfer photos. " +
-                "You can close this app or pause sharing at any time."
-        );
-        notice.setTextSize(14);
-        notice.setTextColor(0xFF555555);
-        notice.setPadding(0, 20, 0, 10);
-        layout.addView(notice);
-
-        permissionButton.setOnClickListener(v -> {
-            if (!consentCheckBox.isChecked()) {
-                permissionStatus.setText(
-                        "Please agree before requesting gallery access."
-                );
-                return;
-            }
-
-            requestGalleryPermission();
+            integrator.setDesiredBarcodeFormats(
+                    IntentIntegrator.QR_CODE
+            );
+            integrator.setPrompt("Scan the Admin QR code");
+            integrator.setBeepEnabled(false);
+            integrator.setOrientationLocked(true);
+            integrator.initiateScan();
         });
 
-        pauseButton.setOnClickListener(v -> {
-            paused = !paused;
-
-            if (paused) {
-                pauseButton.setText("Resume Sharing");
-                syncStatus.setText("Sharing paused by device owner");
-            } else {
-                pauseButton.setText("Pause Sharing");
-                syncStatus.setText(
-                        "Sharing resumed. Cloud sync is not configured."
-                );
-            }
-        });
-
-        disconnectButton.setOnClickListener(v -> {
-            connected = false;
-            paused = true;
-            syncStatus.setText("Device disconnected");
-            pairingStatus.setText("Not paired with an Admin device");
+        resetButton.setOnClickListener(v -> {
+            status.setText("Status: Not connected");
+            scanButton.setEnabled(true);
         });
 
         setContentView(layout);
     }
 
-    private TextView createStatusText() {
-        TextView text = new TextView(this);
-        text.setTextSize(15);
-        text.setTextColor(0xFF333333);
-        text.setPadding(0, 10, 0, 10);
-        return text;
+    @Override
+    protected void onActivityResult(
+            int requestCode,
+            int resultCode,
+            Intent data
+    ) {
+        IntentResult result =
+                IntentIntegrator.parseActivityResult(
+                        requestCode, resultCode, data
+                );
+
+        if (result != null) {
+            String scanned = result.getContents();
+
+            if (scanned == null) {
+                status.setText("Scan cancelled");
+            } else {
+                connectToAdmin(scanned);
+            }
+            return;
+        }
+
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
-    private void requestGalleryPermission() {
-        String permission;
+    private void connectToAdmin(String scanned) {
 
-        if (Build.VERSION.SDK_INT >= 33) {
-            permission = Manifest.permission.READ_MEDIA_IMAGES;
-        } else {
-            permission = Manifest.permission.READ_EXTERNAL_STORAGE;
-        }
-
-        if (checkSelfPermission(permission)
-                == PackageManager.PERMISSION_GRANTED) {
-            updatePermissionStatus();
-        } else {
-            requestPermissions(
-                    new String[]{permission},
-                    GALLERY_PERMISSION_REQUEST
-            );
-        }
-    }
-
-    private void updatePermissionStatus() {
-        String permission;
-
-        if (Build.VERSION.SDK_INT >= 33) {
-            permission = Manifest.permission.READ_MEDIA_IMAGES;
-        } else {
-            permission = Manifest.permission.READ_EXTERNAL_STORAGE;
-        }
-
-        if (checkSelfPermission(permission)
-                == PackageManager.PERMISSION_GRANTED) {
-            permissionStatus.setText("Gallery permission: Granted");
-            updatePhotoCount();
-        } else {
-            permissionStatus.setText("Gallery permission: Not granted");
-            photoCount.setText("Photos available: Not accessible");
-        }
-    }
-
-    private void updatePhotoCount() {
-        int count = 0;
+        final URL pairingUrl;
 
         try {
-            String[] projection = {
-                    MediaStore.Images.Media._ID
-            };
+            pairingUrl = new URL(scanned);
 
-            try (Cursor cursor = getContentResolver().query(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    projection,
-                    null,
-                    null,
-                    null
-            )) {
-                if (cursor != null) {
-                    count = cursor.getCount();
+            if (!"http".equalsIgnoreCase(pairingUrl.getProtocol())
+                    || pairingUrl.getHost() == null
+                    || pairingUrl.getPort() != 8988
+                    || !"/pair".equals(pairingUrl.getPath())
+                    || pairingUrl.getQuery() == null
+                    || !pairingUrl.getQuery().startsWith("token=")) {
+
+                status.setText("Invalid Admin QR code");
+                return;
+            }
+
+        } catch (Exception e) {
+            status.setText("Invalid QR code");
+            return;
+        }
+
+        status.setText("Connecting to Admin...");
+        scanButton.setEnabled(false);
+
+        new Thread(() -> {
+
+            HttpURLConnection connection = null;
+            String message;
+
+            try {
+                connection = (HttpURLConnection)
+                        pairingUrl.openConnection();
+
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(8000);
+                connection.setReadTimeout(8000);
+                connection.setUseCaches(false);
+                connection.setInstanceFollowRedirects(false);
+
+                int responseCode = connection.getResponseCode();
+
+                InputStream stream =
+                        responseCode >= 400
+                                ? connection.getErrorStream()
+                                : connection.getInputStream();
+
+                ByteArrayOutputStream output =
+                        new ByteArrayOutputStream();
+
+                if (stream != null) {
+                    byte[] buffer = new byte[1024];
+                    int count;
+
+                    while ((count = stream.read(buffer)) != -1) {
+                        output.write(buffer, 0, count);
+                    }
+
+                    stream.close();
+                }
+
+                String response = output.toString("UTF-8").trim();
+
+                if (responseCode == 200
+                        && "PAIR_OK".equals(response)) {
+
+                    message = "SUCCESS: Connected to Admin!";
+
+                } else {
+                    message = "Admin rejected pairing. HTTP "
+                            + responseCode
+                            + " - "
+                            + response;
+                }
+
+            } catch (Exception e) {
+
+                message = "CONNECTION FAILED: "
+                        + e.getClass().getSimpleName();
+
+                if (e.getMessage() != null) {
+                    message += " - " + e.getMessage();
+                }
+
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
                 }
             }
 
-            photoCount.setText("Photos available: " + count);
+            final String finalMessage = message;
 
-        } catch (Exception e) {
-            photoCount.setText("Unable to read gallery");
-        }
-    }
+            runOnUiThread(() -> {
+                status.setText(finalMessage);
+                scanButton.setEnabled(true);
+            });
 
-    @Override
-    public void onRequestPermissionsResult(
-            int requestCode,
-            String[] permissions,
-            int[] grantResults
-    ) {
-        super.onRequestPermissionsResult(
-                requestCode,
-                permissions,
-                grantResults
-        );
-
-        if (requestCode == GALLERY_PERMISSION_REQUEST) {
-            updatePermissionStatus();
-
-            if (grantResults.length > 0 &&
-                    grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                permissionStatus.setText("Gallery permission: Granted");
-            } else {
-                permissionStatus.setText(
-                        "Gallery permission: Denied. You can enable it in Settings."
-                );
-            }
-        }
+        }).start();
     }
 }
