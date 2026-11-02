@@ -1,11 +1,11 @@
-
-name: Build Android APK
+name: Build Android APKs
 
 on:
   workflow_dispatch:
+
   push:
     paths:
-      - 'AndroidDeviceInspector-source.zip'
+      - 'AndroidDeviceInspector/**'
       - '.github/workflows/build-android-apk.yml'
 
 jobs:
@@ -27,27 +27,22 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
 
-      - name: Install Android SDK components
-        run: |
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
-
       - name: Install Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extract Android project
-        run: |
-          unzip AndroidDeviceInspector-source.zip
-          test -f AndroidDeviceInspector/settings.gradle
-
-      - name: Build APK
+      - name: Build all three apps
         working-directory: AndroidDeviceInspector
-        run: gradle assembleDebug --no-daemon
+        run: |
+          gradle :app:assembleDebug :admin:assembleDebug :collector:assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Upload all APKs
         uses: actions/upload-artifact@v4
         with:
-          name: AndroidDeviceInspector-APK
-          path: AndroidDeviceInspector/app/build/outputs/apk/debug/app-debug.apk
+          name: AndroidDeviceInspector-APKs
+          path: |
+            AndroidDeviceInspector/app/build/outputs/apk/debug/app-debug.apk
+            AndroidDeviceInspector/admin/build/outputs/apk/debug/admin-debug.apk
+            AndroidDeviceInspector/collector/build/outputs/apk/debug/collector-debug.apk
           if-no-files-found: error
