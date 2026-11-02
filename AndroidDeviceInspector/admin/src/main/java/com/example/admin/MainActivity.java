@@ -198,49 +198,52 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    private void handleClient(Socket client) {
+
+private void handleClient(Socket client) {
+    try {
+        java.io.BufferedReader input =
+                new java.io.BufferedReader(
+                        new java.io.InputStreamReader(
+                                client.getInputStream()));
+
+        String request = input.readLine();
+        String line;
+
+        // Read each HTTP header line exactly once.
+        while ((line = input.readLine()) != null && !line.isEmpty()) {
+            // Headers are not needed for pairing.
+        }
+
+        boolean valid = request != null
+                && token != null
+                && request.contains("/pair?token=" + token);
+
+        String body = valid ? "PAIR_OK" : "PAIR_DENIED";
+
+        String response = "HTTP/1.1 200 OK\r\n"
+                + "Content-Type: text/plain\r\n"
+                + "Content-Length: " + body.length() + "\r\n"
+                + "Connection: close\r\n\r\n"
+                + body;
+
+        client.getOutputStream().write(response.getBytes("UTF-8"));
+        client.getOutputStream().flush();
+
+        if (valid) {
+            runOnUiThread(() ->
+                    status.setText("Collector reached Admin server"));
+        }
+
+    } catch (Exception e) {
+        runOnUiThread(() ->
+                status.setText("Connection error: " + e.getMessage()));
+    } finally {
         try {
-            java.io.BufferedReader input =
-                    new java.io.BufferedReader(
-                            new java.io.InputStreamReader(
-                                    client.getInputStream()));
-
-            String request = input.readLine();
-
-            while (input.readLine() != null
-                    && !input.readLine().isEmpty()) {
-                // Read request headers.
-            }
-
-            boolean valid = request != null
-                    && request.contains("/pair?token=" + token);
-
-            String body = valid
-                    ? "PAIR_OK"
-                    : "PAIR_DENIED";
-
-            String response = "HTTP/1.1 200 OK\r\n"
-                    + "Content-Type: text/plain\r\n"
-                    + "Content-Length: " + body.length() + "\r\n"
-                    + "Connection: close\r\n\r\n"
-                    + body;
-
-            client.getOutputStream().write(
-                    response.getBytes("UTF-8"));
-            client.getOutputStream().flush();
-
-            if (valid) {
-                runOnUiThread(() ->
-                        status.setText("Collector reached Admin server"));
-            }
+            client.close();
         } catch (Exception ignored) {
-        } finally {
-            try {
-                client.close();
-            } catch (Exception ignored) {
-            }
         }
     }
+}
 
     private void stopServer() {
         try {
